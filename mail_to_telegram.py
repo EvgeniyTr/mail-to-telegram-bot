@@ -1,21 +1,22 @@
 import imaplib
 import email
+import json
 import os
 import re
 import sys
 from email.header import decode_header
 from html import unescape
-from urllib import request, parse
+from urllib import request
 
-TELEGRAM_TOKEN = os.environ['TELEGRAM_TOKEN']
-TELEGRAM_CHAT_ID = os.environ['TELEGRAM_CHAT_ID']
+YANDEX_BOT_TOKEN = os.environ['YANDEX_BOT_TOKEN']
+YANDEX_RECIPIENT = os.environ['YANDEX_RECIPIENT']  # логин пользователя или chat_id группы
 EMAIL_LOGIN = os.environ['EMAIL_LOGIN']
 EMAIL_PASSWORD = os.environ['EMAIL_PASSWORD']
 IMAP_HOST = os.getenv('IMAP_HOST', 'imap.yandex.ru')
 IMAP_PORT = int(os.getenv('IMAP_PORT', '993'))
 IMAP_FOLDER = os.getenv('IMAP_FOLDER', 'INBOX')
 SUBJECT_FILTER = os.getenv('SUBJECT_FILTER', '').strip()
-FROM_FILTER = os.getenv('FROM_FILTER', '').strip().lower()
+FROM_FILTER = os.getenv('FROM_FILTER', '').strip()
 MAX_BODY = int(os.getenv('MAX_BODY', '1200'))
 
 
@@ -82,22 +83,23 @@ def extract_body(msg):
     return body[:MAX_BODY]
 
 
-def telegram_send(text):
-    url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage'
-    data = parse.urlencode({'chat_id': TELEGRAM_CHAT_ID, 'text': text}).encode()
-    req = request.Request(url, data=data)
+def yandex_send(text):
+    url = 'https://botapi.messenger.yandex.net/bot/v1/messages/sendText/'
+    recipient = YANDEX_RECIPIENT
+    if recipient.startswith('0/') or recipient.startswith('1/'):
+        body = json.dumps({'chat_id': recipient, 'text': text[:6000]})
+    else:
+        body = json.dumps({'login': recipient, 'text': text[:6000]})
+    req = request.Request(
+        url,
+        data=body.encode('utf-8'),
+        headers={
+            'Authorization': f'OAuth {YANDEX_BOT_TOKEN}',
+            'Content-Type': 'application/json',
+        },
+    )
     with request.urlopen(req, timeout=30) as resp:
         return resp.read().decode()
-
-
-def matches_filters(sender, subject):
-    sender_l = (sender or '').lower()
-    subject_l = (subject or '').lower()
-    if FROM_FILTER and FROM_FILTER not in sender_l:
-        return False
-    if SUBJECT_FILTER and SUBJECT_FILTER.lower() not in subject_l:
-        return False
-    return True
 
 
 def main():
@@ -107,7 +109,18 @@ def main():
     if status != 'OK':
         raise RuntimeError(f'Cannot open folder: {IMAP_FOLDER}')
 
-    status, data = mail.search(None, '(UNSEEN)')
+    criteria = ['UNSEEN']
+    charset = None
+
+    if SUBJECT_FILTER:
+        criteria.extend(['SUBJECT', f'"{SUBJECT_FILTER}"'])
+        charset = 'UTF-8'
+
+    if FROM_FILTER:
+        criteria.extend(['FROM', f'"{FROM_FILTER}"'])
+        charset = 'UTF-8'
+
+    status, data = mail.search(charset, *criteria)
     if status != 'OK':
         raise RuntimeError('Cannot search unseen emails')
 
@@ -127,17 +140,15 @@ def main():
         subject = decode_mime(msg.get('Subject', '(без темы)'))
         sender = decode_mime(msg.get('From', '(неизвестный отправитель)'))
         date = decode_mime(msg.get('Date', ''))
-        if not matches_filters(sender, subject):
-            continue
         body = extract_body(msg)
         text = (
-            f'📩 Новое письмо\n'
+            f'**Новое письмо**\n'
             f'От: {sender}\n'
             f'Тема: {subject}\n'
             f'Дата: {date}\n\n'
             f'{body or "(текст письма пустой)"}'
         )
-        telegram_send(text[:4096])
+        yandex_send(text[:6000])
         mail.store(msg_id, '+FLAGS', '\\Seen')
         forwarded += 1
 

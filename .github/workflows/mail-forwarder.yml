@@ -22,8 +22,8 @@ jobs:
 
       - name: Run forwarder
         env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          YANDEX_BOT_TOKEN: ${{ secrets.YANDEX_BOT_TOKEN }}
+          YANDEX_RECIPIENT: ${{ secrets.YANDEX_RECIPIENT }}
           EMAIL_LOGIN: ${{ secrets.EMAIL_LOGIN }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           IMAP_HOST: imap.yandex.ru
